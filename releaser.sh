@@ -37,17 +37,41 @@ __parent="$(cd "$(dirname "${__dir}")" && pwd)"
 VERSION="1.0"
 
 APP_NAME=${APP_NAME:-deploy}
+STRATEGY="clone"
+
 readonly APPS_DIRNAME="${__dir}/apps"
 readonly REPOSITORY_CACHE_DIR=${APPS_DIRNAME}/.cached-copy/${APP_NAME}
 readonly RELEASE_PATH_DIR=${APPS_DIRNAME}/${APP_NAME}
 
 # GIT variables
+REPOSITORY=""
 BRANCH=""
 REVISION="HEAD"
 
 #####################
 # Utilities.        #
 #####################
+
+function is_file_exists(){
+  local fexists="$1"
+  [[ -f "${fexists}" ]] && return 0 || return 1
+}
+
+function cleanup(){
+  local target="$1"
+  local verbose=${2:-false}
+  local args=""
+
+  args="-rf"
+
+  # Wondering why "" ? See https://stackoverflow.com/a/2953673
+  if [ "$verbose" = true ]
+  then
+    args="${args}v"
+  fi
+
+  $(find ${target} ! -path ${target} -print0 | xargs -I {} -0 rm ${args} "{}")
+}
 
 function display()
 {
@@ -62,10 +86,10 @@ function display_error(){
 
 # Dump script usage syntax and options
 function releaser_Usage(){
-  echo "Usage: $0 [params] repository"
-  echo "Params can be one or more of the following :"
-  echo "    --version | -v     : Print out version number and exit"
-  echo "    --branch  | -b     : Check out corresponding branch"
+  printf "[\033[36mUsage\033[0m]: \033[32m$0 [params] repository\033[0\n"
+  printf "\033[32mParams can be one or more of the following :\032[0\n"
+  printf "\033[36m    --version | -v\033[0m     : Print out version number and exit\n"
+  printf "\033[36m    --branch  | -b\033[0m     : Check out corresponding branch\n"
 }
 
 function setup(){
@@ -97,8 +121,7 @@ function get_revision(){
     echo ${REVISION}
     return 0
   fi
-  echo ${BRANCH}
-  exit 1
+
   # Ok we propably got a branch / tag name, let's find the hash
   revision=$(git ls-remote --quiet ${REPOSITORY} ${BRANCH})
   revision=$(echo ${revision}|cut -d " " -f 1)
@@ -112,10 +135,60 @@ function get_revision(){
   fi
 }
 
-function do_release(){
-  local revision=$(get_revision)
+# Sync an existing repository with remote.
+function sync_repo(){
+  local revision="$1"
+  local destination="$2"
 
-  echo ${revision}
+  cd ${destination}
+  git fetch origin && git fetch --tags  origin && git reset  --hard ${revision}
+  git clean -d -x -f
+}
+
+# Do a checkout or a sync from the repository
+function clone (){
+
+  # Switch from mirror strategy let's clean up ?
+  if ( is_file_exists "${REPOSITORY_CACHE_DIR}/HEAD" )
+  then
+    display "Cleaning up mirror repository ..."
+    cleanup "${REPOSITORY_CACHE_DIR}" true
+  fi
+
+  # We are checking if repository is empty before cloning.
+  if [ "$(ls -A ${REPOSITORY_CACHE_DIR})" ];
+  then
+    display "Repository already exists, updating ..."
+    sync_repo ${REVISION} ${REPOSITORY_CACHE_DIR}
+  else
+    display "Repository does not exists ... cloning"
+    checkout
+  fi
+}
+
+# Building the release
+function do_release(){
+  REVISION=$(get_revision)
+
+  if [ -z ${REVISION} ]
+    then
+    display_error "Unable to find or resolve revision on repository '${REPOSITORY}'."
+    exit 1
+  fi
+
+  display "Running with ${STRATEGY} strategy"
+  cleanup ${RELEASE_PATH_DIR}
+
+  if [ "${STRATEGY}" == "mirror" ]
+    then
+    mirror ${BRANCH}
+  elif [ "${STRATEGY}" == "clone" ]
+    then
+    clone
+  else
+    display "Unknown strategy ${STRATEGY}"
+    exit 1
+  fi
 }
 
 ###################
@@ -129,31 +202,38 @@ do
   case $key in
     -v|--version)
       display "Git releaser version ${VERSION}"
-      shift # past argument
-      shift # past value
+      shift 2
     ;;
     -h | --help)
       releaser_Usage
-      shift # past argument
-      shift # past value
+      shift 2
     ;;
     -b | --branch)
       if [ "${2:-}" = "" ]
       then
-        display_error "You need to specified a branch name with --branch parameter"
+        display_error "You need to specified a branch name."
         exit 1
       else
         BRANCH=${2}
       fi
-      shift # past argument
+      shift 2
+    ;;
+    -r | --repository)
+      if [ "${2:-}" = "" ]
+      then
+        display_error "You need to specified a repository name."
+        exit 1
+      else
+        REPOSITORY=${2}
+      fi
+      shift 2
     ;;
     -*)
-      echo $1
+      display_error "Unrecognized parameter ${1}"
       exit 1
     ;;
-    *) # Unknown option
-      releaser_Usage
-      exit 0
+    *)
+      break
     ;;
   esac
 done
@@ -161,7 +241,13 @@ done
 if [ $# -lt 1 ]
 then
   releaser_Usage
+  exit 1
 else
-  setup
-  do_release
+  REPOSITORY="${1}"
+fi
+
+setup
+if (do_release)
+  then
+  display "Release build successfully"
 fi
