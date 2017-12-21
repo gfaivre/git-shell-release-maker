@@ -135,6 +135,10 @@ function get_revision(){
   fi
 }
 
+function mark(){
+  (echo ${REVISION} > ${RELEASE_PATH_DIR}/REVISION)
+}
+
 # Sync an existing repository with remote.
 function sync_repo(){
   local revision="$1"
@@ -189,6 +193,13 @@ function do_release(){
     display "Unknown strategy ${STRATEGY}"
     exit 1
   fi
+
+  display "Preparing archive from ${BRANCH}:${REVISION}"
+  cd ${REPOSITORY_CACHE_DIR} && \
+    $(git archive ${REVISION} | tar -x -f - -C ${RELEASE_PATH_DIR})
+
+  # We add a file with the hash of the current build release
+  mark ${REVISION}
 }
 
 ###################
@@ -215,16 +226,6 @@ do
         exit 1
       else
         BRANCH=${2}
-      fi
-      shift 2
-    ;;
-    -r | --repository)
-      if [ "${2:-}" = "" ]
-      then
-        display_error "You need to specified a repository name."
-        exit 1
-      else
-        REPOSITORY=${2}
       fi
       shift 2
     ;;
