@@ -89,10 +89,11 @@ function display_error(){
 function releaser_Usage(){
   printf "[\033[36mUsage\033[0m]: \033[32m$0 [params] repository\033[0\n"
   printf "\033[32mParams can be one or more of the following :\032[0\n"
-  printf "\033[36m    --version   | -v\033[0m : Print out version number and exit\n"
-  printf "\033[36m    --branch    | -b\033[0m : Check out corresponding branch\n"
-  printf "\033[36m    --strategy  | -s\033[0m : Change the way we create the local repository (clone or mirror, default is clone)\n"
-  printf "\033[36m    --revision  | -r\033[0m : Specify a revision to release\n"
+  printf "\033[36m    --version   | -v\033[0m  : Print out version number and exit\n"
+  printf "\033[36m    --branch    | -b\033[0m  : Check out corresponding branch\n"
+  printf "\033[36m    --strategy  | -s\033[0m  : Change the way we create the local repository (clone or mirror, default is clone)\n"
+  printf "\033[36m    --revision  | -r\033[0m  : Specify a revision to release\n"
+  printf "\033[36m    --shallow   | -sh\033[0m : Create a shallow clone with a history truncated to the specified number of commits.\n"
 }
 
 function setup(){
@@ -175,11 +176,11 @@ function clone (){
 # Set up a mirror of the source repository
 function mirror_clone(){
 
-  if [ ${SHALLOW_CLONE} -gt 0 ]
+  if [ "${SHALLOW_CLONE}" = false ]
     then
-    git clone --mirror --depth ${SHALLOW_CLONE} --no-single-branch ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
-  else
     git clone --mirror ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
+  else
+    git clone --mirror --depth ${SHALLOW_CLONE} --no-single-branch ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
   fi
 }
 
@@ -265,6 +266,10 @@ do
     ;;
     -r | --revision)
       REVISION=${2}
+      shift 2
+    ;;
+    -sh | --shallow)
+      SHALLOW_CLONE=${2}
       shift 2
     ;;
     -b | --branch)

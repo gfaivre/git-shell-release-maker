@@ -9,17 +9,27 @@ The syntax of releaser is the following:
 releaser.sh [args] repository URL
 
 * args are optional options for the Releaser. The available ones are :
-	* --version : Prints the version number on stdout, then exits immediately
-	* --branch : Specify a branch to build the release on (default master)
-
+	* --version  : Prints the version number on stdout, then exits immediately
+	* --branch   : Specify a branch to build the release on (default master)
+    * --strategy : Change the way we create the local repository (clone or mirror, default is clone)
+    * --revision : Specify a revision to release
+    * --shallow  : Create a shallow clone with a history truncated to the specified number of commits
 * repository is a git repository URL
 
-Here is an example, assuming we need to checkout a specific commit hash.
+## Here is an example, assuming we need to checkout a specific commit hash.
 
 `releaser.sh --branch my_awesome_branch --revision dd05c227116b349b1516386587130697796f09a0 git@github.com:gfaivre/git-shell-releaser.git`
 
 By default **HEAD** of the branch will be checked out if no revision is specified.
 If no branch is given, **master** branch is considered.
+
+## Example to checkout a shallow clone with truncated history.
+
+`releaser.sh --shallow 3 --branch my_awesome_branch git@github.com:gfaivre/git-shell-releaser.git`
+
+## Changing repository clone strategy
+
+`releaser.sh --strategy mirror --branch my_awesome_branch git@github.com:gfaivre/git-shell-releaser.git`
 
 Script will create the following arborescence containing the projects builds:
 
