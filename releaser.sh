@@ -45,8 +45,9 @@ readonly RELEASE_PATH_DIR=${APPS_DIRNAME}/${APP_NAME}
 
 # GIT variables
 REPOSITORY=""
-BRANCH=""
+BRANCH="master"
 REVISION="HEAD"
+SHALLOW_CLONE=false
 
 #####################
 # Utilities.        #
@@ -76,7 +77,7 @@ function cleanup(){
 function display()
 {
   local message="$1"
-  printf "[\033[36mGIT Releaser\033[0m] \033[32m${message}\033[0m\n"
+  printf "[\033[36mInfo\033[0m] \033[32m${message}\033[0m\n"
 }
 
 function display_error(){
@@ -88,8 +89,10 @@ function display_error(){
 function releaser_Usage(){
   printf "[\033[36mUsage\033[0m]: \033[32m$0 [params] repository\033[0\n"
   printf "\033[32mParams can be one or more of the following :\032[0\n"
-  printf "\033[36m    --version | -v\033[0m     : Print out version number and exit\n"
-  printf "\033[36m    --branch  | -b\033[0m     : Check out corresponding branch\n"
+  printf "\033[36m    --version   | -v\033[0m : Print out version number and exit\n"
+  printf "\033[36m    --branch    | -b\033[0m : Check out corresponding branch\n"
+  printf "\033[36m    --strategy  | -s\033[0m : Change the way we create the local repository (clone or mirror, default is clone)\n"
+  printf "\033[36m    --revision  | -r\033[0m : Specify a revision to release\n"
 }
 
 function setup(){
@@ -113,7 +116,6 @@ function is_valid_hash(){
 # Getting the actual commit id, in case we were passed a tag
 # or partial sha or something - it will return the sha if you pass a sha, too
 function get_revision(){
-
   local revision=""
 
   if (is_valid_hash ${REVISION})
@@ -149,24 +151,62 @@ function sync_repo(){
   git clean -d -x -f
 }
 
-# Do a checkout or a sync from the repository
+# Clones a repository or update it
 function clone (){
 
   # Switch from mirror strategy let's clean up ?
   if ( is_file_exists "${REPOSITORY_CACHE_DIR}/HEAD" )
-  then
+    then
     display "Cleaning up mirror repository ..."
     cleanup "${REPOSITORY_CACHE_DIR}" true
   fi
 
   # We are checking if repository is empty before cloning.
   if [ "$(ls -A ${REPOSITORY_CACHE_DIR})" ];
-  then
+    then
     display "Repository already exists, updating ..."
     sync_repo ${REVISION} ${REPOSITORY_CACHE_DIR}
   else
     display "Repository does not exists ... cloning"
     checkout
+  fi
+}
+
+# Set up a mirror of the source repository
+function mirror_clone(){
+
+  if [ ${SHALLOW_CLONE} -gt 0 ]
+    then
+    git clone --mirror --depth ${SHALLOW_CLONE} --no-single-branch ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
+  else
+    git clone --mirror ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
+  fi
+}
+
+function update_mirror(){
+  cd ${REPOSITORY_CACHE_DIR}
+  # Update the origin URL if necessary.
+  git remote set-url origin ${REPOSITORY}
+
+  # Note: Requires git version 1.9 or greater
+  if [ "${SHALLOW_CLONE}" = false ]
+    then
+    git remote update --prune
+  else
+    git fetch --depth ${SHALLOW_CLONE} origin ${BRANCH}
+  fi
+}
+
+# Update or create a mirror repository (bare).
+function mirror(){
+  if ( is_file_exists "${REPOSITORY_CACHE_DIR}/HEAD" )
+    then
+      display "Mirror already exists (Updating from branch: ${BRANCH})"
+      update_mirror ${BRANCH}
+    else
+      echo "Mirror does not exists ... cloning"
+      cleanup "${REPOSITORY_CACHE_DIR}"
+      mirror_clone
   fi
 }
 
@@ -185,7 +225,7 @@ function do_release(){
 
   if [ "${STRATEGY}" == "mirror" ]
     then
-    mirror ${BRANCH}
+    mirror
   elif [ "${STRATEGY}" == "clone" ]
     then
     clone
@@ -219,6 +259,14 @@ do
       releaser_Usage
       shift 2
     ;;
+    -s | --strategy)
+      STRATEGY=${2}
+      shift 2
+    ;;
+    -r | --revision)
+      REVISION=${2}
+      shift 2
+    ;;
     -b | --branch)
       if [ "${2:-}" = "" ]
       then
@@ -240,7 +288,7 @@ do
 done
 
 if [ $# -lt 1 ]
-then
+  then
   releaser_Usage
   exit 1
 else

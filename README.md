@@ -16,7 +16,7 @@ releaser.sh [args] repository URL
 
 Here is an example, assuming we need to checkout a specific commit hash.
 
-`releaser.sh --branch my_awesome_branch --revision dd05c227116b349b1516386587130697796f09a0`
+`releaser.sh --branch my_awesome_branch --revision dd05c227116b349b1516386587130697796f09a0 git@github.com:gfaivre/git-shell-releaser.git`
 
 By default **HEAD** of the branch will be checked out if no revision is specified.
 If no branch is given, **master** branch is considered.
