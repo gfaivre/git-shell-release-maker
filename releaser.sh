@@ -40,8 +40,8 @@ APP_NAME=${APP_NAME:-deploy}
 STRATEGY="clone"
 
 readonly APPS_DIRNAME="${__dir}/apps"
-readonly REPOSITORY_CACHE_DIR=${APPS_DIRNAME}/.cached-copy/${APP_NAME}
-readonly RELEASE_PATH_DIR=${APPS_DIRNAME}/${APP_NAME}
+readonly REPOSITORIES_CACHE_DIR=${APPS_DIRNAME}/.cached-copy
+readonly RELEASE_PATH_DIR=${APPS_DIRNAME}
 
 # GIT variables
 REPOSITORY=""
@@ -87,9 +87,10 @@ function display_error(){
 
 # Dump script usage syntax and options
 function releaser_Usage(){
-  printf "[\033[36mUsage\033[0m]: \033[32m$0 [params] repository\033[0\n"
-  printf "\033[32mParams can be one or more of the following :\032[0\n"
+  printf "[\033[36mUsage\033[0m]: \033[32m$0 [params] repository\033\n"
+  printf "\033[32mParams can be one or more of the following :\032\n"
   printf "\033[36m    --version   | -v\033[0m  : Print out version number and exit\n"
+  printf "\033[36m    --name      | -n\033[0m  : Specify the name of the release and checkout folders\n"
   printf "\033[36m    --branch    | -b\033[0m  : Check out corresponding branch\n"
   printf "\033[36m    --strategy  | -s\033[0m  : Change the way we create the local repository (clone or mirror, default is clone)\n"
   printf "\033[36m    --revision  | -r\033[0m  : Specify a revision to release\n"
@@ -99,8 +100,8 @@ function releaser_Usage(){
 function setup(){
   # Creating workdir env
   mkdir -p ${APPS_DIRNAME}/${APP_NAME}
-  mkdir -p ${REPOSITORY_CACHE_DIR}
-  mkdir -p ${RELEASE_PATH_DIR}
+  mkdir -p ${REPOSITORIES_CACHE_DIR}/${APP_NAME}
+  mkdir -p ${RELEASE_PATH_DIR}/${APP_NAME}
 }
 
 function is_valid_hash(){
@@ -139,7 +140,7 @@ function get_revision(){
 }
 
 function mark(){
-  (echo ${REVISION} > ${RELEASE_PATH_DIR}/REVISION)
+  (echo ${REVISION} > ${RELEASE_PATH_DIR}/${APP_NAME}/REVISION)
 }
 
 # Sync an existing repository with remote.
@@ -152,21 +153,45 @@ function sync_repo(){
   git clean -d -x -f
 }
 
+# Checkout a repository branch to a given revision
+function checkout(){
+  local args=""
+  local remote=${remote:-origin}
+
+  # Add an option for the branch name so :git_shallow_clone works with branches
+  if [ "${REVISION}" == "${BRANCH}" ]
+  then
+    args="${args} -b ${BRANCH}"
+  fi
+
+  if [ "${remote}" != "origin" ]
+  then
+    args="${args} -o ${remote}"
+  fi
+
+  if [ "${SHALLOW_CLONE}" != false ]
+  then
+    args="${args} --depth  ${SHALLOW_CLONE}"
+  fi
+
+  $(git clone ${args} --no-single-branch ${REPOSITORY} ${REPOSITORIES_CACHE_DIR}/${APP_NAME})
+}
+
 # Clones a repository or update it
 function clone (){
 
   # Switch from mirror strategy let's clean up ?
-  if ( is_file_exists "${REPOSITORY_CACHE_DIR}/HEAD" )
+  if ( is_file_exists "${REPOSITORIES_CACHE_DIR}/${APP_NAME}/HEAD" )
     then
     display "Cleaning up mirror repository ..."
-    cleanup "${REPOSITORY_CACHE_DIR}" true
+    cleanup "${REPOSITORIES_CACHE_DIR}/${APP_NAME}" true
   fi
 
   # We are checking if repository is empty before cloning.
-  if [ "$(ls -A ${REPOSITORY_CACHE_DIR})" ];
+  if [ "$(ls -A ${REPOSITORIES_CACHE_DIR}/${APP_NAME})" ];
     then
     display "Repository already exists, updating ..."
-    sync_repo ${REVISION} ${REPOSITORY_CACHE_DIR}
+    sync_repo ${REVISION} ${REPOSITORIES_CACHE_DIR}/${APP_NAME}
   else
     display "Repository does not exists ... cloning"
     checkout
@@ -178,14 +203,14 @@ function mirror_clone(){
 
   if [ "${SHALLOW_CLONE}" = false ]
     then
-    git clone --mirror ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
+    git clone --mirror ${REPOSITORY} ${REPOSITORIES_CACHE_DIR}/${APP_NAME}
   else
-    git clone --mirror --depth ${SHALLOW_CLONE} --no-single-branch ${REPOSITORY} ${REPOSITORY_CACHE_DIR}
+    git clone --mirror --depth ${SHALLOW_CLONE} --no-single-branch ${REPOSITORY} ${REPOSITORIES_CACHE_DIR}/${APP_NAME}
   fi
 }
 
 function update_mirror(){
-  cd ${REPOSITORY_CACHE_DIR}
+  cd ${REPOSITORIES_CACHE_DIR}/${APP_NAME}
   # Update the origin URL if necessary.
   git remote set-url origin ${REPOSITORY}
 
@@ -200,13 +225,13 @@ function update_mirror(){
 
 # Update or create a mirror repository (bare).
 function mirror(){
-  if ( is_file_exists "${REPOSITORY_CACHE_DIR}/HEAD" )
+  if ( is_file_exists "${REPOSITORIES_CACHE_DIR}//${APP_NAME}/HEAD" )
     then
       display "Mirror already exists (Updating from branch: ${BRANCH})"
       update_mirror ${BRANCH}
     else
       echo "Mirror does not exists ... cloning"
-      cleanup "${REPOSITORY_CACHE_DIR}"
+      cleanup "${REPOSITORIES_CACHE_DIR}/${APP_NAME}"
       mirror_clone
   fi
 }
@@ -222,7 +247,7 @@ function do_release(){
   fi
 
   display "Running with ${STRATEGY} strategy"
-  cleanup ${RELEASE_PATH_DIR}
+  cleanup ${RELEASE_PATH_DIR}/${APP_NAME}
 
   if [ "${STRATEGY}" == "mirror" ]
     then
@@ -236,8 +261,8 @@ function do_release(){
   fi
 
   display "Preparing archive from ${BRANCH}:${REVISION}"
-  cd ${REPOSITORY_CACHE_DIR} && \
-    $(git archive ${REVISION} | tar -x -f - -C ${RELEASE_PATH_DIR})
+  cd ${REPOSITORIES_CACHE_DIR}/${APP_NAME} && \
+    $(git archive ${REVISION} | tar -x -f - -C ${RELEASE_PATH_DIR}/${APP_NAME})
 
   # We add a file with the hash of the current build release
   mark ${REVISION}
@@ -258,6 +283,10 @@ do
     ;;
     -h | --help)
       releaser_Usage
+      shift 2
+    ;;
+    -n | --name)
+      APP_NAME=${2}
       shift 2
     ;;
     -s | --strategy)
